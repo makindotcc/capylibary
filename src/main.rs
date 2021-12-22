@@ -1,9 +1,8 @@
-use core::time;
-use std::{array, ffi::CString, intrinsics::transmute, iter, ptr, thread};
+use std::{array, intrinsics::transmute, iter, ptr};
 
 use winapi::{
     shared::{
-        minwindef::{LPVOID, MAX_PATH},
+        minwindef::LPVOID,
         winerror::WAIT_TIMEOUT,
     },
     um::{
@@ -40,6 +39,7 @@ fn main() {
     println!("Hello, world!");
 
     unsafe {
+        // todo: handle program args
         inject(
             18488,
             &WString::from(
@@ -66,7 +66,7 @@ impl From<&str> for WString {
         WString {
             bytes: val
                 .encode_utf16()
-                .map(u16::to_ne_bytes)
+                .map(u16::to_ne_bytes) // convert to bytes vec
                 .flat_map(array::IntoIter::new)
                 .chain(iter::once(0)) // convert to cstring (add \0 suffix)
                 .collect::<Vec<u8>>(),
@@ -74,12 +74,15 @@ impl From<&str> for WString {
     }
 }
 
+// Create handle to given process. Then allocate and fill "path" bytes in target process,
+// start new remote thread with entry point at LoadLibraryW
 unsafe fn inject(process_id: u32, path: &WString) -> Result<(), LoadLibraryError> {
     const MAX_UNICODE_PATH: u16 = u16::MAX;
     if path.bytes_length() >= MAX_UNICODE_PATH as usize {
         return Err(LoadLibraryError::PathTooLong);
     }
 
+    // We need to create handle to achieve permissions to allocate, write, create thread in target process.
     let process_handle = OpenProcess(PROCESS_ALL_ACCESS, 0, process_id);
     if process_handle as usize == 0 {
         return Err(LoadLibraryError::OpenProcess {
@@ -88,12 +91,13 @@ unsafe fn inject(process_id: u32, path: &WString) -> Result<(), LoadLibraryError
     }
 
     let load_library_result = load_library(process_handle, &path);
+    // close handle, it's no longer used
     CloseHandle(process_handle);
-
     load_library_result
 }
 
 unsafe fn load_library(process_handle: HANDLE, path: &WString) -> Result<(), LoadLibraryError> {
+    // allocate memory in target process which later will be filled with our path
     let path_address = VirtualAllocEx(
         process_handle,
         ptr::null_mut(),
@@ -108,6 +112,7 @@ unsafe fn load_library(process_handle: HANDLE, path: &WString) -> Result<(), Loa
     }
 
     let result = load_library_allocated_arg(process_handle, path, path_address);
+    // free memory, it's no longer needed
     if VirtualFreeEx(process_handle, path_address, 0, MEM_RELEASE) == 0 {
         return Err(LoadLibraryError::FreeArgumentMemory {
             winapi_error: GetLastError(),
@@ -122,6 +127,7 @@ unsafe fn load_library_allocated_arg(
     path_address: LPVOID,
 ) -> Result<(), LoadLibraryError> {
     let mut bytes_written: usize = 0;
+    // write path which will be used as an argument in LoadLibraryW
     let write_arg_failure = WriteProcessMemory(
         process_handle,
         path_address,
@@ -145,6 +151,7 @@ unsafe fn load_library_allocated_arg(
     let kernel32_handle = GetModuleHandleA("kernel32\0".as_ptr() as _);
     let load_libraryw_address = GetProcAddress(kernel32_handle, "LoadLibraryW\0".as_ptr() as _);
 
+    // Start thread at LoadLibraryW address with "path_address" as an argument.
     let thread_handle = CreateRemoteThread(
         process_handle,
         ptr::null_mut(),
