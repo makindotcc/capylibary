@@ -161,8 +161,9 @@ unsafe fn load_library_allocated_arg(
         0,
         ptr::null_mut(),
     );
-
-    match WaitForSingleObject(thread_handle, INFINITE) as u32 {
+    let wait_result = WaitForSingleObject(thread_handle, INFINITE);
+    CloseHandle(thread_handle);
+    match wait_result {
         WAIT_OBJECT_0 => Ok(()),
         WAIT_ABANDONED => Err(LoadLibraryError::ThreadWaitAbandoned),
         WAIT_TIMEOUT => Err(LoadLibraryError::ThreadWaitTimeout),
