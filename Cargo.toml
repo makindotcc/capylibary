@@ -3,5 +3,10 @@ name = "capylibary"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "capylibary"
+
 [dependencies]
-winapi = { version = "^0.3", features = ["everything"] }
+winapi = { version = "0.3.9", features = ["winbase", "winnt", "winerror", "processthreadsapi",
+    "errhandlingapi", "handleapi", "libloaderapi", "memoryapi", "synchapi", "psapi", "tlhelp32"] }
+clap = { version = "4.2.1", features = ["derive"] }
