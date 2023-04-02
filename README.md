@@ -3,7 +3,7 @@ Loads the specified module into the address space of the specified Windows proce
 
 # installation
 ```bash
-cargo install --git https://github.com/BuzkaaClicker/capylibary
+cargo install --git https://github.com/makindotcc/capylibary
 ```
 
 # usage
